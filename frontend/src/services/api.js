@@ -1,7 +1,8 @@
 import axios from "axios";
 
-Key: REACT_APP_API_URL
-Value: https://nigehbaan-1.onrender.com/api
+const API = axios.create({
+  baseURL: process.env.REACT_APP_API_URL || "http://localhost:5000/api",
+});
 
 // Attach token to every request
 API.interceptors.request.use((config) => {

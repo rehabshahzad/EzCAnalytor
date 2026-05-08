@@ -1,14 +1,38 @@
 const mongoose = require("mongoose");
 const Crime = require("../models/Crime");
 const Officer = require("../models/Officer");
+const { CRIME_TYPE_TO_DEPARTMENTS } = require("../utils/crimeConstants");
 
 const createCrime = async (req, res) => {
   try {
-    const { title, description, crimeType, city, area, incidentDate, status, officer } = req.body;
+    const { title, description, crimeType, area, incidentDate, status, officer } = req.body;
+    const imagePaths = (req.files || []).map((file) => `/uploads/${file.filename}`);
+
+    // City is always taken from the logged-in admin's profile — never from the form
+    const city = req.user.city;
+    if (!city) {
+      return res.status(400).json({ success: false, message: "Your admin account has no city assigned." });
+    }
+
+    if (officer) {
+      const assignedOfficer = await Officer.findById(officer);
+      if (!assignedOfficer) {
+        return res.status(400).json({ success: false, message: "Officer not found" });
+      }
+
+      const allowedDepartments = CRIME_TYPE_TO_DEPARTMENTS[crimeType] || [];
+      if (!allowedDepartments.includes(assignedOfficer.department)) {
+        return res.status(400).json({
+          success: false,
+          message: `Officer department must match crime type ${crimeType}`
+        });
+      }
+    }
 
     const newCrime = new Crime({
       title, description, crimeType, city, area, incidentDate, status,
-      officer: officer || null
+      officer: officer || null,
+      images: imagePaths
     });
 
     const savedCrime = await newCrime.save();
@@ -29,6 +53,9 @@ const getAllCrimes = async (req, res) => {
     } = req.query;
 
     const filters = {};
+if (req.user.role === "admin" && req.user.city) {
+  filters.city = req.user.city;
+}
 
     if (city)      filters.city      = city;
     if (crimeType) filters.crimeType = crimeType;
@@ -104,18 +131,99 @@ const getCrimeById = async (req, res) => {
 };
 
 const updateCrime = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
-    const updatedCrime = await Crime.findByIdAndUpdate(
-      req.params.id, req.body, { new: true, runValidators: true }
-    ).populate("officer", "name badgeNumber department assignedCases");
+    session.startTransaction();
 
-    if (!updatedCrime) {
-      return res.status(404).json({ success: false, message: "Crime report not found" });
+    const crime = await Crime.findById(req.params.id).session(session);
+    if (!crime) {
+      throw new Error("Crime report not found");
     }
+
+    const previousOfficerId = crime.officer ? crime.officer.toString() : null;
+    const previousStatus = crime.status;
+
+    const updates = { ...req.body };
+    const newOfficerId = updates.officer ? updates.officer.toString() : previousOfficerId;
+    const newStatus = updates.status || previousStatus;
+    const appliedCrimeType = updates.crimeType || crime.crimeType;
+    const newImagePaths = (req.files || []).map((file) => `/uploads/${file.filename}`);
+
+    if (newImagePaths.length) {
+      updates.images = [...(crime.images || []), ...newImagePaths];
+    }
+
+    if (newOfficerId) {
+      const validationOfficer = await Officer.findById(newOfficerId).session(session);
+      if (!validationOfficer) {
+        throw new Error("Officer not found");
+      }
+
+      const allowedDepartments = CRIME_TYPE_TO_DEPARTMENTS[appliedCrimeType] || [];
+      if (!allowedDepartments.includes(validationOfficer.department)) {
+        throw new Error("Officer department does not match the selected crime type");
+      }
+    }
+
+    if (!newOfficerId && updates.crimeType && previousOfficerId) {
+      const currentOfficer = await Officer.findById(previousOfficerId).session(session);
+      if (currentOfficer) {
+        const allowedDepartments = CRIME_TYPE_TO_DEPARTMENTS[appliedCrimeType] || [];
+        if (!allowedDepartments.includes(currentOfficer.department)) {
+          throw new Error("Existing assigned officer does not match the updated crime type");
+        }
+      }
+    }
+
+    // Decrement previous officer count when the crime is no longer active
+    const wasActive = ["open", "investigating"].includes(previousStatus);
+    const willBeActive = ["open", "investigating"].includes(newStatus);
+
+    if (previousOfficerId && previousOfficerId !== newOfficerId && wasActive) {
+      const prevOfficer = await Officer.findById(previousOfficerId).session(session);
+      if (prevOfficer && prevOfficer.assignedCases > 0) {
+        prevOfficer.assignedCases -= 1;
+        await prevOfficer.save({ session });
+      }
+    }
+
+    if (previousOfficerId && previousOfficerId === newOfficerId && previousOfficerId && previousStatus !== newStatus) {
+      const officer = await Officer.findById(previousOfficerId).session(session);
+      if (officer) {
+        if (wasActive && !willBeActive && officer.assignedCases > 0) {
+          officer.assignedCases -= 1;
+          await officer.save({ session });
+        } else if (!wasActive && willBeActive) {
+          officer.assignedCases += 1;
+          await officer.save({ session });
+        }
+      }
+    }
+
+    if (newOfficerId && newOfficerId !== previousOfficerId && willBeActive) {
+      const newOfficer = await Officer.findById(newOfficerId).session(session);
+      if (!newOfficer) {
+        throw new Error("Officer not found");
+      }
+      newOfficer.assignedCases += 1;
+      await newOfficer.save({ session });
+    }
+
+    Object.assign(crime, updates);
+    await crime.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+
+    const updatedCrime = await Crime.findById(req.params.id)
+      .populate("officer", "name badgeNumber department assignedCases");
 
     res.status(200).json({ success: true, message: "Crime report updated successfully", data: updatedCrime });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Failed to update crime report", error: error.message });
+    await session.abortTransaction();
+    session.endSession();
+    const statusCode = error.message === "Crime report not found" ? 404 : 500;
+    res.status(statusCode).json({ success: false, message: error.message || "Failed to update crime report", error: error.message });
   }
 };
 
@@ -187,6 +295,18 @@ const assignCrimeToOfficer = async (req, res) => {
 
     const officer = await Officer.findById(officerId).session(session);
     if (!officer) throw new Error("Officer not found");
+    if (req.user.city && officer.city !== req.user.city) {
+      throw new Error("Cannot assign a crime to an officer from a different city");
+    }
+
+    const allowedDepartments = CRIME_TYPE_TO_DEPARTMENTS[crime.crimeType] || [];
+    if (!allowedDepartments.includes(officer.department)) {
+      throw new Error("Officer department does not match this crime type");
+    }
+
+    if (officer.assignedCases > 0 && (!crime.officer || crime.officer.toString() !== officerId)) {
+      throw new Error("Officer is already assigned to an active case and cannot take another until it is resolved");
+    }
 
     if (crime.officer && crime.officer.toString() === officerId) {
       throw new Error("Crime is already assigned to this officer");
@@ -220,7 +340,42 @@ const assignCrimeToOfficer = async (req, res) => {
   }
 };
 
+
+const getCrimesByArea = async (req, res) => {
+  try {
+    const { city } = req.query;
+    const matchStage = city ? { $match: { city } } : null;
+
+    const pipeline = [
+      ...(matchStage ? [matchStage] : []),
+      {
+        $group: {
+          _id: { city: "$city", area: "$area" },
+          totalCrimes: { $sum: 1 }
+        }
+      },
+      { $sort: { totalCrimes: -1 } },
+      {
+        $group: {
+          _id: "$_id.city",
+          areas: {
+            $push: { area: "$_id.area", totalCrimes: "$totalCrimes" }
+          },
+          totalCrimes: { $sum: "$totalCrimes" }
+        }
+      },
+      { $sort: { totalCrimes: -1 } }
+    ];
+
+    const stats = await Crime.aggregate(pipeline);
+    res.status(200).json({ success: true, count: stats.length, data: stats });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Failed to fetch area-wise crime stats", error: error.message });
+  }
+};
+
 module.exports = {
   createCrime, getAllCrimes, getCrimeById, updateCrime,
-  deleteCrime, getCrimesByCity, getCrimesByType, getCrimeTrends, assignCrimeToOfficer
+  deleteCrime, getCrimesByCity, getCrimesByType, getCrimeTrends,
+  getCrimesByArea, assignCrimeToOfficer
 };

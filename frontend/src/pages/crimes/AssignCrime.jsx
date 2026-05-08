@@ -11,16 +11,24 @@ const AssignCrime = () => {
   const [message, setMessage] = useState(null);
 
   useEffect(() => {
-    Promise.all([
-      API.get("/crimes?limit=100"),
-      API.get("/officers"),
-    ]).then(([cr, or]) => {
-      setCrimes(cr.data.data || []);
-      setOfficers(or.data.data || []);
-    }).catch(() => {
-      setMessage({ type: "error", text: "Failed to load data" });
-    }).finally(() => setLoading(false));
+    API.get("/crimes?limit=100")
+      .then((cr) => setCrimes(cr.data.data || []))
+      .catch(() => setMessage({ type: "error", text: "Failed to load crimes" }))
+      .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    const selectedCrime = crimes.find((c) => c._id === form.crimeId);
+    if (!selectedCrime) {
+      setOfficers([]);
+      return;
+    }
+
+    setMessage(null);
+    API.get(`/officers?available=true&crimeType=${encodeURIComponent(selectedCrime.crimeType)}`)
+      .then((or) => setOfficers(or.data.data || []))
+      .catch(() => setMessage({ type: "error", text: "Failed to load available officers" }));
+  }, [form.crimeId, crimes]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -66,7 +74,7 @@ const AssignCrime = () => {
                 <label className="form-label">Select Crime Incident</label>
                 <select className="form-control" value={form.crimeId} onChange={(e) => setForm((f) => ({ ...f, crimeId: e.target.value }))} required>
                   <option value="">-- Choose an incident --</option>
-                  {crimes.map((c) => (
+                  {crimes.filter((c) => c.status === "open" || c.status === "investigating").map((c) => (
                     <option key={c._id} value={c._id}>
                       [{c.status.toUpperCase()}] {c.title} — {c.city}
                     </option>
@@ -76,14 +84,27 @@ const AssignCrime = () => {
 
               <div className="form-group">
                 <label className="form-label">Select Officer</label>
-                <select className="form-control" value={form.officerId} onChange={(e) => setForm((f) => ({ ...f, officerId: e.target.value }))} required>
-                  <option value="">-- Choose an officer --</option>
+                <select
+                  className="form-control"
+                  value={form.officerId}
+                  onChange={(e) => setForm((f) => ({ ...f, officerId: e.target.value }))}
+                  required
+                  disabled={!selectedCrime}
+                >
+                  <option value="">
+                    {selectedCrime ? "-- Choose an officer --" : "Select a crime first"}
+                  </option>
                   {officers.map((o) => (
                     <option key={o._id} value={o._id}>
-                      {o.name} (#{o.badgeNumber}) · {o.assignedCases} active cases
+                      {o.name} (#{o.badgeNumber}) · {o.department}
                     </option>
                   ))}
                 </select>
+                {selectedCrime && officers.length === 0 && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-muted)" }}>
+                    No available officers found for {selectedCrime.crimeType}. Try selecting another incident or assign once an officer is free.
+                  </div>
+                )}
               </div>
 
               <button type="submit" className="btn btn-primary" disabled={saving || !form.crimeId || !form.officerId} style={{ width: "100%", justifyContent: "center", padding: "12px" }}>

@@ -1,10 +1,25 @@
+import { useAuth } from "../../context/AuthContext";
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import API from "../../services/api";
 import { Spinner } from "../../components/UI";
 
+const departments = [
+  "Homicide",
+  "Narcotics",
+  "Cyber Crime",
+  "Financial Crimes",
+  "Traffic",
+  "Family Protection",
+  "Property Crime",
+  "Fire & Arson",
+  "Public Safety",
+  "Vice"
+];
+
 const OfficerForm = ({ editMode = false }) => {
   const { id } = useParams();
+const { user } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState({ name: "", department: "" });
   const [loading, setLoading] = useState(editMode);
@@ -90,6 +105,10 @@ const OfficerForm = ({ editMode = false }) => {
                 <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginBottom: 4 }}>DEPARTMENT</div>
                 <div style={{ fontSize: 14 }}>{created.department}</div>
               </div>
+<div>
+  <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginBottom: 4 }}>CITY</div>
+  <div style={{ fontSize: 14 }}>{created.city}</div>
+</div>
             </div>
           </div>
 
@@ -139,16 +158,32 @@ const OfficerForm = ({ editMode = false }) => {
 
           <div className="form-group">
             <label className="form-label">Department</label>
-            <input
-              type="text"
+            <select
               name="department"
               className="form-control"
-              placeholder="e.g. Homicide, Narcotics, Cyber Crime"
               value={form.department}
               onChange={handleChange}
               required
-            />
+            >
+              <option value="">-- Select department --</option>
+              {departments.map((dept) => (
+                <option key={dept} value={dept}>{dept}</option>
+              ))}
+            </select>
           </div>
+<div className="form-group">
+  <label className="form-label">City</label>
+  <input
+    type="text"
+    className="form-control"
+    value={user?.city || ""}
+    readOnly
+    style={{ opacity: 0.6, cursor: "not-allowed" }}
+  />
+  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, fontFamily: "var(--font-mono)" }}>
+    Auto-assigned from your admin profile
+  </div>
+</div>
 
           {!editMode && (
             <div style={{

@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { CRIME_TYPES } = require("../utils/crimeConstants");
 
 const crimeSchema = new mongoose.Schema(
   {
@@ -15,7 +16,8 @@ const crimeSchema = new mongoose.Schema(
     crimeType: {
       type: String,
       required: true,
-      trim: true
+      trim: true,
+      enum: CRIME_TYPES
     },
     city: {
       type: String,
@@ -40,6 +42,10 @@ const crimeSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Officer",
       default: null
+    },
+    images: {
+      type: [String],
+      default: []
     }
   },
   {

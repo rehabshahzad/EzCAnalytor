@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const userSchema = new mongoose.Schema(
+const adminSchema = new mongoose.Schema(
   {
     name: {
       type: String,
@@ -18,16 +18,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true
     },
-    role: {
+    city: {
       type: String,
-      enum: ["officer", "user"],
-      default: "user"
-    },
-    badgeNumber: {
-      type: String,
-      unique: true,
-      sparse: true,
-      default: null
+      required: true,
+      trim: true
     }
   },
   {
@@ -35,6 +29,6 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-const User = mongoose.models.User || mongoose.model("User", userSchema);
+const Admin = mongoose.models.Admin || mongoose.model("Admin", adminSchema);
 
-module.exports = User;
+module.exports = Admin;

@@ -1,10 +1,11 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const Admin = require("../models/Admin");
 
-const generateToken = (userId) => {
+const generateToken = (user) => {
   return jwt.sign(
-    { id: userId },
+    { id: user._id, role: user.role },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
   );
@@ -12,7 +13,7 @@ const generateToken = (userId) => {
 
 const registerUser = async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({
@@ -36,12 +37,11 @@ const registerUser = async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      role: role || "user"
+      role: "user"
     });
 
     const savedUser = await newUser.save();
-
-    const token = generateToken(savedUser._id);
+    const token = generateToken(savedUser);
 
     res.status(201).json({
       success: true,
@@ -65,12 +65,44 @@ const registerUser = async (req, res) => {
 
 const loginUser = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, role: loginRole } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({
         success: false,
         message: "Email and password are required"
+      });
+    }
+
+    if (loginRole === "admin") {
+      const admin = await Admin.findOne({ email });
+      if (!admin) {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid email or password"
+        });
+      }
+
+      const isMatch = await bcrypt.compare(password, admin.password);
+      if (!isMatch) {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid email or password"
+        });
+      }
+
+      const token = generateToken({ _id: admin._id, role: "admin" });
+      return res.status(200).json({
+        success: true,
+        message: "Login successful",
+        token,
+        data: {
+          _id: admin._id,
+          name: admin.name,
+          email: admin.email,
+          role: "admin",
+          city: admin.city
+        }
       });
     }
 
@@ -92,7 +124,7 @@ const loginUser = async (req, res) => {
       });
     }
 
-    const token = generateToken(user._id);
+    const token = generateToken(user);
 
     res.status(200).json({
       success: true,
@@ -116,18 +148,31 @@ const loginUser = async (req, res) => {
 
 const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select("-password");
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found"
-      });
+    let data;
+    if (req.user.role === "admin") {
+      const admin = await Admin.findById(req.user.id).select("-password");
+      if (!admin) {
+        return res.status(404).json({
+          success: false,
+          message: "Admin not found"
+        });
+      }
+      data = admin.toObject();
+      data.role = "admin";
+    } else {
+      const user = await User.findById(req.user.id).select("-password");
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found"
+        });
+      }
+      data = user.toObject();
     }
 
     res.status(200).json({
       success: true,
-      data: user
+      data
     });
   } catch (error) {
     res.status(500).json({

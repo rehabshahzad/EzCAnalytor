@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const Admin = require("../models/Admin");
 const Officer = require("../models/Officer");
 
 const generateToken = (user) => {
@@ -51,6 +52,31 @@ const loginUser = async (req, res) => {
       return res.status(400).json({ success: false, message: "Email is required" });
     }
 
+    // ── Admin login: authenticate against the Admin collection ──
+    if (loginRole === "admin") {
+      if (!password) {
+        return res.status(400).json({ success: false, message: "Password is required" });
+      }
+
+      const admin = await Admin.findOne({ email });
+      if (!admin) {
+        return res.status(401).json({ success: false, message: "Invalid credentials" });
+      }
+
+      const isMatch = await bcrypt.compare(password, admin.password);
+      if (!isMatch) {
+        return res.status(401).json({ success: false, message: "Invalid credentials" });
+      }
+
+      const token = generateToken({ _id: admin._id, role: "admin" });
+      return res.status(200).json({
+        success: true,
+        message: "Login successful",
+        token,
+        data: { _id: admin._id, name: admin.name, email: admin.email, role: "admin", city: admin.city }
+      });
+    }
+
     // ── Officer login: authenticate against the Officer collection ──
     if (loginRole === "officer") {
       if (!badgeNumber) {
@@ -81,14 +107,10 @@ const loginUser = async (req, res) => {
       });
     }
 
-    // ── Admin / User login: authenticate against the User collection ──
+    // ── User login: authenticate against the User collection ──
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
-    }
-
-    if (loginRole === "admin" && user.role !== "admin") {
-      return res.status(403).json({ success: false, message: "Access denied" });
     }
 
     if (!password) {
@@ -101,12 +123,12 @@ const loginUser = async (req, res) => {
     }
 
     const token = generateToken(user);
-    res.status(200).json({
-      success: true,
-      message: "Login successful",
-      token,
-      data: { _id: user._id, name: user.name, email: user.email, role: user.role, badgeNumber: user.badgeNumber }
-    });
+   res.status(200).json({
+  success: true,
+  message: "Login successful",
+  token,
+  data: { _id: user._id, name: user.name, email: user.email, role: user.role, badgeNumber: user.badgeNumber, city: user.city || null }
+});
   } catch (error) {
     res.status(500).json({ success: false, message: "Login failed", error: error.message });
   }
@@ -115,14 +137,22 @@ const loginUser = async (req, res) => {
 // ─── PROFILE ──────────────────────────────────────────────────────────────────
 const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select("-password");
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    let data;
+    if (req.user.role === "admin") {
+      const admin = await Admin.findById(req.user.id).select("-password");
+      if (!admin) return res.status(404).json({ success: false, message: "Admin not found" });
+      data = admin.toObject();
+      data.role = "admin";
+    } else {
+      const user = await User.findById(req.user.id).select("-password");
+      if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    // Attach badge number from Officer record if officer
-    let data = user.toObject();
-    if (user.role === "officer") {
-      const officer = await Officer.findOne({ userId: user._id });
-      if (officer) data.badgeNumber = officer.badgeNumber;
+      // Attach badge number from Officer record if officer
+      data = user.toObject();
+      if (user.role === "officer") {
+        const officer = await Officer.findOne({ userId: user._id });
+        if (officer) data.badgeNumber = officer.badgeNumber;
+      }
     }
 
     res.status(200).json({ success: true, data });
@@ -131,4 +161,45 @@ const getProfile = async (req, res) => {
   }
 };
 
-module.exports = { registerUser, loginUser, getProfile };
+// ─── CHANGE PASSWORD ───────────────────────────────────────────────────────────
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({ success: false, message: "All password fields are required" });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ success: false, message: "New passwords do not match" });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: "New password must be at least 6 characters" });
+    }
+
+    const model = req.user.role === "admin" ? Admin : User;
+    const account = await model.findById(req.user.id);
+    if (!account) {
+      return res.status(404).json({ success: false, message: "Account not found" });
+    }
+
+    if (!account.password) {
+      return res.status(400).json({ success: false, message: "Password change is not available for this account" });
+    }
+
+    const isValid = await bcrypt.compare(currentPassword, account.password);
+    if (!isValid) {
+      return res.status(401).json({ success: false, message: "Current password is incorrect" });
+    }
+
+    account.password = await bcrypt.hash(newPassword, 10);
+    await account.save();
+
+    res.status(200).json({ success: true, message: "Password updated successfully" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Password update failed", error: error.message });
+  }
+};
+
+module.exports = { registerUser, loginUser, getProfile, changePassword };

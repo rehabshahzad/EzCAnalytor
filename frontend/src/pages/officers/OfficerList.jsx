@@ -4,13 +4,15 @@ import API from "../../services/api";
 import { Spinner, EmptyState, ConfirmModal } from "../../components/UI";
 import { useAuth } from "../../context/AuthContext";
 
+// Avatar with solid accent background so initial always pops
 const OfficerAvatar = ({ name }) => (
   <div style={{
-    width: 48, height: 48, borderRadius: "50%", flexShrink: 0,
-    background: "var(--bg-primary)", border: "1px solid var(--border)",
+    width: 46, height: 46, borderRadius: "50%", flexShrink: 0,
+    background: "var(--accent)",
     display: "flex", alignItems: "center", justifyContent: "center",
     fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 700,
-    color: "var(--text-secondary)"
+    color: "#ffffff",
+    boxShadow: "0 2px 8px rgba(230,57,70,0.35)"
   }}>
     {name?.[0]?.toUpperCase() || "O"}
   </div>
@@ -107,49 +109,93 @@ const OfficerList = () => {
         <div className="row g-3">
           {filtered.map((o) => (
             <div className="col-12 col-md-6 col-lg-4" key={o._id}>
-              <div className="card" style={{ height: "100%", cursor: "pointer" }}
+              <div
+                className="card"
+                style={{ height: "100%", cursor: "pointer" }}
                 onClick={() => navigate(`/officers/${o._id}`)}
                 onMouseEnter={(e) => e.currentTarget.style.borderColor = "var(--blue)"}
-                onMouseLeave={(e) => e.currentTarget.style.borderColor = "var(--border)"}>
-
+                onMouseLeave={(e) => e.currentTarget.style.borderColor = "var(--border)"}
+              >
+                {/* Top row: avatar + name/badge + case count */}
                 <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
                   <OfficerAvatar name={o.name} />
+
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {/* Name — always bright white */}
+                    <div style={{
+                      fontWeight: 700,
+                      fontSize: 15,
+                      marginBottom: 4,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      color: "#f1f5f9",           // explicit — never inherits card bg
+                    }}>
                       {o.name}
                     </div>
-                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)" }}>
+                    {/* Badge number — muted mono */}
+                    <div style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                      color: "#94a3b8",            // explicit slate-400
+                      letterSpacing: "0.5px",
+                    }}>
                       {o.badgeNumber}
                     </div>
                   </div>
+
+                  {/* Case count */}
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontFamily: "var(--font-display)", fontSize: 30, color: o.assignedCases > 0 ? "var(--accent)" : "var(--text-muted)", lineHeight: 1 }}>
+                    <div style={{
+                      fontFamily: "var(--font-display)",
+                      fontSize: 30,
+                      fontWeight: 800,
+                      lineHeight: 1,
+                      color: o.assignedCases > 0 ? "var(--accent)" : "#475569",
+                    }}>
                       {o.assignedCases}
                     </div>
-                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-muted)", letterSpacing: 1 }}>CASES</div>
+                    <div style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 9,
+                      color: "#64748b",
+                      letterSpacing: "1px",
+                      marginTop: 2,
+                    }}>
+                      CASES
+                    </div>
                   </div>
                 </div>
 
+                {/* Department */}
                 <div style={{
-                  fontFamily: "var(--font-mono)", fontSize: 11,
-                  color: "var(--text-secondary)",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  color: "#cbd5e1",               // slate-300 — clearly readable
                   padding: "10px 0",
                   borderTop: "1px solid var(--border)",
-                  borderBottom: isAdmin ? "1px solid var(--border)" : "none"
+                  borderBottom: isAdmin ? "1px solid var(--border)" : "none",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
                 }}>
                   {o.department}
                 </div>
 
+                {/* Admin actions */}
                 {isAdmin && (
                   <div style={{ display: "flex", gap: 8, marginTop: 12 }} onClick={(e) => e.stopPropagation()}>
-                    <Link to={`/officers/edit/${o._id}`}
+                    <Link
+                      to={`/officers/edit/${o._id}`}
                       className="btn btn-secondary btn-sm"
-                      style={{ flex: 1, justifyContent: "center" }}>
+                      style={{ flex: 1, justifyContent: "center" }}
+                    >
                       Edit
                     </Link>
-                    <button className="btn btn-danger btn-sm"
+                    <button
+                      className="btn btn-danger btn-sm"
                       style={{ flex: 1, justifyContent: "center" }}
-                      onClick={() => setDeleteId(o._id)}>
+                      onClick={() => setDeleteId(o._id)}
+                    >
                       Remove
                     </button>
                   </div>

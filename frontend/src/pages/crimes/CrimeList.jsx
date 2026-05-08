@@ -4,6 +4,19 @@ import API from "../../services/api";
 import { Spinner, EmptyState, ConfirmModal } from "../../components/UI";
 import { useAuth } from "../../context/AuthContext";
 
+const crimeTypes = [
+  "Homicide",
+  "Narcotics",
+  "Cyber Crime",
+  "Fraud",
+  "Traffic Violation",
+  "Domestic Violence",
+  "Burglary",
+  "Arson",
+  "Disturbance",
+  "Human Trafficking"
+];
+
 const StatusBadge = ({ status }) => {
   const map = { open: "badge-open", investigating: "badge-investigating", resolved: "badge-resolved" };
   return <span className={`badge ${map[status] || "badge-user"}`}>{status}</span>;
@@ -134,7 +147,12 @@ const CrimeList = () => {
           </div>
           <div className="filter-item">
             <label className="form-label">Crime Type</label>
-            <input type="text" name="crimeType" className="form-control" placeholder="e.g. Theft" value={filters.crimeType} onChange={handleFilterChange} />
+            <select name="crimeType" className="form-control" value={filters.crimeType} onChange={handleFilterChange}>
+              <option value="">All Types</option>
+              {crimeTypes.map((type) => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
           </div>
           <div className="filter-item">
             <label className="form-label">Status</label>
